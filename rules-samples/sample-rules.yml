@@ -1,0 +1,18 @@
+- path: s3router-source1/data1
+  regex: \/yyyy=(?P<anio>\w+)\/mm=(?P<mes>\w+)\/dd=(?P<dia>\w+)\/(?P<file>\S+)
+  eval:
+    fileType:
+      - csv
+      - json
+  destinations:
+    - s3router-destination1/<anio>/<mes>/<dia>/<file>
+    - s3router-destination2/<anio>-<mes>-<dia>-<file>
+
+- path: s3router-source2/data1
+  regex: \/yyyy=(?P<anio>\w+)\/mm=(?P<mes>\w+)\/dd=(?P<dia>\w+)\/(?P<file>\S+)
+  eval:
+    fileType:
+      - csv
+      - json
+  destinations:
+    - s3router-destination3/<anio>/<mes>/<dia>/<file>'

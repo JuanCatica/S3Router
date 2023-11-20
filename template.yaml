@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+    s3router
+
+Globals:
+    Function:
+        Timeout: 120
+        MemorySize: 128
+        Runtime: python3.11
+
+Resources:
+
+    RuleBucket:
+        Type: AWS::S3::Bucket
+        Properties:
+            BucketName: !Sub  ${AWS::StackName}-rule-storage
+            BucketEncryption:
+                ServerSideEncryptionConfiguration:
+                    - ServerSideEncryptionByDefault:
+                          SSEAlgorithm: AES256
+
+    LoaderFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            Description: S3 Router - Router function
+            CodeUri: src/loader/
+            Handler: loader_function.lambda_handler
+            Runtime: python3.9
+            Architectures:
+                - x86_64
+            Environment:
+                Variables:
+                    BUCKET: !Ref RuleBucket
+                    PREFIX: sample-rules.yml
+                    TABLE: !Ref RulesTable
+            Policies:
+                - S3ReadPolicy:
+                    BucketName: !Ref RuleBucket
+                - DynamoDBWritePolicy:
+                    TableName: !Ref RulesTable
+            Tags:
+                project: s3router
+                deployment: sam
+
+    RulesTable:
+        Type: AWS::DynamoDB::Table
+        Properties:
+            TableName: !Sub  ${AWS::StackName}-rules-table
+            AttributeDefinitions:
+                - AttributeName: "bucket"
+                  AttributeType: "S"
+                - AttributeName: "prefix"
+                  AttributeType: "S"
+            KeySchema:
+                - AttributeName: "bucket"
+                  KeyType: "HASH"
+                - AttributeName: "prefix"
+                  KeyType: "RANGE"
+            ProvisionedThroughput:
+                ReadCapacityUnits: 1
+                WriteCapacityUnits: 1
+
+    RouterFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            Description: S3 Router - Router function
+            CodeUri: src/router/
+            Handler: router_function.lambda_handler
+            Runtime: python3.9
+            Architectures:
+                - x86_64
+            Environment:
+                Variables:
+                    TABLE: !Ref RulesTable
+            Policies:
+                - DynamoDBReadPolicy:
+                    TableName: !Ref RulesTable
+                - Version: '2012-10-17'
+                  Statement:
+                    - Effect: Allow
+                      Action:
+                        - s3:GetObject
+                        - s3:ListBucket
+                        - s3:GetBucketLocation
+                        - s3:GetObjectVersion
+                        - s3:PutObject
+                        - s3:PutObjectAcl
+                        - s3:GetLifecycleConfiguration
+                        - s3:PutLifecycleConfiguration
+                        - s3:DeleteObject
+                      Resource: "arn:aws:s3:::*"    
+            Events:
+                SNSTopicEvent:
+                    Type: SNS
+                    Properties:
+                        Topic: !Ref RouterSNSTopic
+            Tags:
+                project: s3router
+                deployment: sam 
+
+    RouterSNSTopic:
+        Type: AWS::SNS::Topic
+        Properties:
+            DisplayName: RouterSNSTopic
+            Subscription:
+                - Protocol: lambda
+                  Endpoint: !GetAtt RouterFunction.Arn
+
+    RuterSNSTopicPolicy:
+        Type: AWS::SNS::TopicPolicy
+        Properties:
+            PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                        Service: "s3.amazonaws.com"
+                      Action: "sns:Publish"
+                      Resource: !Ref RouterSNSTopic
+            Topics:
+            - Ref: RouterSNSTopic
+
+Outputs:
+    RouterSNSTopic:
+      Description: "SNSTopic Router"
+      Value: !Ref RouterSNSTopic
+
